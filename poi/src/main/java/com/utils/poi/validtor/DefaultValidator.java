@@ -14,8 +14,8 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DateUtil;
 
 import com.utils.poi.annotation.ExcelCell;
-import com.utils.poi.annotation.ExcelLog;
-import com.utils.poi.annotation.ExcelLogs;
+import com.utils.poi.log.ExcelLog;
+import com.utils.poi.log.ExcelLogs;
 
 /**
  * Validator的默认实现

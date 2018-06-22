@@ -1,6 +1,6 @@
 package com.utils.poi.validtor;
 
-import com.utils.poi.annotation.ExcelLogs;
+import com.utils.poi.log.ExcelLogs;
 import org.apache.poi.ss.usermodel.Cell;
 
 import java.lang.reflect.Field;

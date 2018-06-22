@@ -1,10 +1,12 @@
 package com.utils.poi;
 
+import com.utils.poi.annotation.DefaultCellStyle;
 import com.utils.poi.annotation.ExcelCell;
-import com.utils.poi.annotation.ExcelLog;
-import com.utils.poi.annotation.ExcelLogs;
 import com.utils.poi.annotation.ExcelSheet;
+import com.utils.poi.annotation.IExcelCellStyle;
 import com.utils.poi.exception.UtilSystemException;
+import com.utils.poi.log.ExcelLog;
+import com.utils.poi.log.ExcelLogs;
 import com.utils.poi.validtor.DefaultValidator;
 import com.utils.poi.validtor.SelfValidator;
 import com.utils.poi.validtor.Validator;
@@ -18,6 +20,8 @@ import org.apache.poi.EncryptedDocumentException;
 import org.apache.poi.hssf.usermodel.*;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,9 +34,10 @@ import java.text.MessageFormat;
 import java.util.*;
 
 /**
- * The <code>ExcelUtil</code> 与 {@link ExcelCell}搭配使用
- *
- * @author luoshouqiang 2016年9月12日
+ * <p>
+ * <li>Description: The <code>ExcelUtil</code> 与 {@link ExcelCell}搭配使用</li>
+ * <li>@author: LiuDun </li>
+ * <li>@date 2018-06-22 09:57:46</li>
  */
 public class ExcelUtil {
     
@@ -50,6 +55,16 @@ public class ExcelUtil {
      * <li>datePattern :日期格式话内容 </li>
      */
     private static String datePattern = "yyyy/MM";
+    
+    /**
+     * 当数据量大于5000条的时候 将数据刷入到系统中
+     */
+    private static int flushRow = 5000;
+    
+    /**
+     * 单个sheet最多行数量
+     */
+    private static int maxRowNumber = 50000;
     
     /**
      * <li> 无参的构造方法 默认校验方式. </li>
@@ -70,7 +85,7 @@ public class ExcelUtil {
     /**
      * 获取单元格值
      *
-     * @param cell the cell  
+     * @param cell the cell   
      * @return cell value
      */
     private static Object getCellValue(Cell cell) {
@@ -101,11 +116,11 @@ public class ExcelUtil {
      * 利用JAVA的反射机制，将放置在JAVA集合中并且符号一定条件的数据以EXCEL 的形式输出到指定IO设备上<br>
      * 用于单个sheet
      *
-     * @param <T>   泛型类   
-     * @param tip tip信息   
-     * @param headers 表格属性列名数组  
-     * @param dataset 需要显示的数据集合,集合中一定要放置符合javabean风格的类的对象。此方法支持的            javabean属性的数据类型有基本数据类型及String,Date,String[],Double[]  
-     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中 
+     * @param <T>    泛型类    
+     * @param tip tip信息    
+     * @param headers 表格属性列名数组   
+     * @param dataset 需要显示的数据集合,集合中一定要放置符合javabean风格的类的对象。此方法支持的            javabean属性的数据类型有基本数据类型及String,Date,String[],Double[]   
+     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中  
      * @throws UtilSystemException the util system exception
      */
     public static <T> void exportExcel(List<String> tip, String[] headers, Collection<T> dataset, OutputStream out)
@@ -117,22 +132,54 @@ public class ExcelUtil {
      * 利用JAVA的反射机制，将放置在JAVA集合中并且符号一定条件的数据以EXCEL 的形式输出到指定IO设备上<br>
      * 用于单个sheet
      *
-     * @param <T>   泛型类 
-     * @param tip tip信息 
-     * @param headers 表格属性列名数组  
-     * @param dataset 需要显示的数据集合,集合中一定要放置符合javabean风格的类的对象。此方法支持的            javabean属性的数据类型有基本数据类型及String,Date,String[],Double[]  
-     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中  
-     * @param pattern 如果有时间数据，设定输出格式。默认为"yyy-MM" 
+     * @param <T>    泛型类  
+     * @param tip tip信息  
+     * @param headers 表格属性列名数组   
+     * @param dataset 需要显示的数据集合,集合中一定要放置符合javabean风格的类的对象。此方法支持的            javabean属性的数据类型有基本数据类型及String,Date,String[],Double[]   
+     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中   
+     * @param pattern 如果有时间数据，设定输出格式。默认为"yyy-MM"  
      * @throws UtilSystemException the util system exception
      */
     public static <T> void exportExcel(List<String> tip, String[] headers, Collection<T> dataset, OutputStream out,
             String pattern) throws UtilSystemException {
         // 声明一个工作薄
-        HSSFWorkbook workbook = new HSSFWorkbook();
+        Workbook workbook = new SXSSFWorkbook(flushRow);
         // 生成一个表格
-        HSSFSheet sheet = workbook.createSheet();
+        Sheet sheet = workbook.createSheet();
         
-        write2Sheet(sheet, tip, headers, dataset, pattern);
+        write2Sheet(sheet, headers, dataset, pattern);
+        try {
+            workbook.write(out);
+        } catch (IOException e) {
+            LG.error("导出excel异常", e);
+            throw new UtilSystemException(e.getMessage());
+        } finally {
+            try {
+                workbook.close();
+            } catch (IOException e) {
+            }
+        }
+    }
+    
+    public static <T> void exportExcel(Workbook workbook, ExcelSheet<T> excelSheet, OutputStream out, String pattern)
+            throws UtilSystemException {
+        
+        String sheetName = excelSheet.getSheetName();
+        
+        int sheetTotal = workbook.getNumberOfSheets();
+        // 生成一个表格
+        Sheet sheet = null;
+        if (sheetTotal == 0) {
+            if (StringUtils.isNotEmpty(sheetName)) {
+                sheet = workbook.createSheet(sheetName);
+            } else {
+                sheet = workbook.createSheet();
+            }
+        } else {
+            sheet = workbook.getSheetAt(sheetTotal - 1);
+        }
+        
+        write2Sheet(sheet, excelSheet.getHeaders(), excelSheet.getDataset(), pattern);
         try {
             workbook.write(out);
         } catch (IOException e) {
@@ -149,7 +196,7 @@ public class ExcelUtil {
     /**
      * <li>Description: 根据二维数组导出数据 </li>
      *
-     * @param datalist 二维数组 
+     * @param datalist 二维数组  
      * @param out 输出流
      */
     public static void exportExcel(String[][] datalist, OutputStream out) {
@@ -194,9 +241,9 @@ public class ExcelUtil {
      * 利用JAVA的反射机制，将放置在JAVA集合中并且符号一定条件的数据以EXCEL 的形式输出到指定IO设备上<br>
      * 用于多个sheet
      *
-     * @param <T>   泛型类   
-     * @param sheets {@link ExcelSheet}的集合 
-     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中
+     * @param <T>    泛型类    
+     * @param sheets {@link ExcelSheet}的集合  
+     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中 
      * @throws UtilSystemException the util system exception
      */
     public static <T> void exportExcel(List<ExcelSheet<T>> sheets, OutputStream out) throws UtilSystemException {
@@ -207,10 +254,10 @@ public class ExcelUtil {
      * 利用JAVA的反射机制，将放置在JAVA集合中并且符号一定条件的数据以EXCEL 的形式输出到指定IO设备上<br>
      * 用于多个sheet
      *
-     * @param <T>   泛型类   
-     * @param sheets {@link ExcelSheet}的集合  
-     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中  
-     * @param pattern 如果有时间数据，设定输出格式。默认为"yyy-MM-dd" 
+     * @param <T>    泛型类    
+     * @param sheets {@link ExcelSheet}的集合   
+     * @param out 与输出设备关联的流对象，可以将EXCEL文档导出到本地文件或者网络中   
+     * @param pattern 如果有时间数据，设定输出格式。默认为"yyy-MM-dd"  
      * @throws UtilSystemException the util system exception
      */
     public static <T> void exportExcel(List<ExcelSheet<T>> sheets, OutputStream out, String pattern)
@@ -219,11 +266,11 @@ public class ExcelUtil {
             return;
         }
         // 声明一个工作薄
-        HSSFWorkbook workbook = new HSSFWorkbook();
+        Workbook workbook = new SXSSFWorkbook();
         for (ExcelSheet<T> sheet : sheets) {
             // 生成一个表格
-            HSSFSheet hssfSheet = workbook.createSheet(sheet.getSheetName());
-            write2Sheet(hssfSheet, null, sheet.getHeaders(), sheet.getDataset(), pattern);
+            Sheet wbSheet = workbook.createSheet(sheet.getSheetName());
+            write2Sheet(wbSheet, sheet.getHeaders(), sheet.getDataset(), pattern);
         }
         try {
             workbook.write(out);
@@ -241,42 +288,38 @@ public class ExcelUtil {
     /**
      * 每个sheet的写入
      *
-     * @param <T>   泛型类   
-     * @param sheet 页签  
-     * @param tip tip信息 
-     * @param headers 表头  
-     * @param dataset 数据集合  
-     * @param pattern 日期格式 
+     * @param <T>    泛型类    
+     * @param headers 表头   
+     * @param dataset 数据集合   
+     * @param pattern 日期格式  
      * @throws UtilSystemException the util system exception
      */
-    private static <T> void write2Sheet(HSSFSheet sheet, List<String> tip, String[] headers, Collection<T> dataset,
-            String pattern) throws UtilSystemException {
+    private static <T> int write2Sheet(Sheet sheet, String[] headers, Collection<T> dataset, String pattern)
+            throws UtilSystemException {
+        
         //标题上面是否存在一些备注
-        HSSFRow row = null;
-        HSSFCell cell = null;
-        HSSFRichTextString text = null;
+        Row row = null;
+        Cell cell = null;
+        XSSFRichTextString text = new XSSFRichTextString();
         
-        for (int i = 0; i < tip.size(); i++) {
-            row = sheet.createRow(i);
-            cell = row.createCell(0);
-            text = new HSSFRichTextString(tip.get(i));
-            cell.setCellValue(text);
-        }
-        
-        // 产生表格标题行
-        row = sheet.createRow(tip.size());
-        for (int i = 0; i < headers.length; i++) {
-            cell = row.createCell(i);
-            text = new HSSFRichTextString(headers[i]);
-            cell.setCellValue(text);
+        int rowNumber = sheet.getLastRowNum();
+        if (rowNumber == 0) {//说明是新的sheet判断是否需要添加标题行
+            // 产生表格标题行
+            if (headers != null && headers.length > 0) {
+                row = sheet.createRow(rowNumber);
+                for (int i = 0; i < headers.length; i++) {
+                    cell = row.createCell(i);
+                    text.setString(headers[i]);
+                    cell.setCellValue(text);
+                }
+            }
         }
         
         // 遍历集合数据，产生数据行
         Iterator<T> it = dataset.iterator();
-        int index = tip.size();
         while (it.hasNext()) {
-            index++;
-            row = sheet.createRow(index);
+            rowNumber++;
+            row = sheet.createRow(rowNumber);
             T t = (T) it.next();
             try {
                 if (t instanceof Map) {
@@ -295,17 +338,23 @@ public class ExcelUtil {
                     }
                 } else {
                     List<FieldForSortting> fields = sortFieldByAnno(t.getClass());
-                    HSSFCellStyle cellStyle = sheet.getWorkbook().createCellStyle();
-                    HSSFDataFormat format = sheet.getWorkbook().createDataFormat();
+                    
+                    Workbook wb = sheet.getWorkbook();
+                    
+                    CellStyle cellStyle = null;
+                    DataFormat format = null;
+                    
                     int cellNum = 0;
                     for (int i = 0; i < fields.size(); i++) {
                         cell = row.createCell(cellNum);
-                        Field field = fields.get(i).getField();
+                        FieldForSortting fieldForSortting = fields.get(i);
+                        Field field = fieldForSortting.getField();
                         field.setAccessible(true);
                         Object value = field.get(t);
                         String textValue = null;
+                        cellStyle = fieldForSortting.getCellStyle().getCellStyle(wb);
+                        format = fieldForSortting.getCellStyle().getDataFormat(wb);
                         if (value instanceof Integer) {
-                            cellStyle = sheet.getWorkbook().createCellStyle();
                             cellStyle.setDataFormat((short) 1);
                             int intValue = (Integer) value;
                             cell.setCellValue(intValue);
@@ -314,7 +363,6 @@ public class ExcelUtil {
                             float fValue = (Float) value;
                             cell.setCellValue(fValue);
                         } else if (value instanceof Double) {
-                            cellStyle = sheet.getWorkbook().createCellStyle();
                             cellStyle.setDataFormat((short) 2);
                             double dValue = (Double) value;
                             cell.setCellValue(dValue);
@@ -326,8 +374,6 @@ public class ExcelUtil {
                             boolean bValue = (Boolean) value;
                             cell.setCellValue(bValue);
                         } else if (value instanceof Date) {
-                            cellStyle = sheet.getWorkbook().createCellStyle();
-                            format = sheet.getWorkbook().createDataFormat();
                             cellStyle.setDataFormat(format.getFormat(pattern));
                             cell.setCellValue((Date) value);
                             cell.setCellStyle(cellStyle);
@@ -365,8 +411,11 @@ public class ExcelUtil {
                             textValue = value == null ? empty : value.toString();
                         }
                         if (textValue != null) {
-                            HSSFRichTextString richString = new HSSFRichTextString(textValue);
-                            cell.setCellValue(richString);
+                            //HSSFRichTextString richString = new HSSFRichTextString(textValue);
+                            
+                            text.setString(textValue);
+                            
+                            cell.setCellValue(text);
                         }
                         
                         cellNum++;
@@ -381,16 +430,18 @@ public class ExcelUtil {
         for (int i = 0; i < headers.length; i++) {
             sheet.autoSizeColumn(i);
         }
+        
+        return rowNumber;
     }
     
     /**
      * 把Excel的数据封装成voList
      *
-     * @param <T>    泛型类 
-     * @param clazz 解析的clazz类 
-     * @param inputFile 输入的文件集合 
-     * @param logs 错误log集合  
-     * @param arrayCount 如果vo中有数组类型,那就按照index顺序,把数组应该有几个值写上.  
+     * @param <T>     泛型类  
+     * @param clazz 解析的clazz类  
+     * @param inputFile 输入的文件集合  
+     * @param logs 错误log集合   
+     * @param arrayCount 如果vo中有数组类型,那就按照index顺序,把数组应该有几个值写上.   
      * @return voList
      * @throws UtilSystemException the util system exception
      */
@@ -520,12 +571,12 @@ public class ExcelUtil {
     /**
      * value 的setter方法
      *
-     * @param <T>   the type parameter  
-     * @param field the field  
-     * @param value the value  
-     * @param t the t  
-     * @param cell the cell  
-     * @throws IllegalArgumentException the illegal argument exception  
+     * @param <T>    the type parameter   
+     * @param field the field   
+     * @param value the value   
+     * @param t the t   
+     * @param cell the cell   
+     * @throws IllegalArgumentException the illegal argument exception   
      * @throws IllegalAccessException the illegal access exception
      */
     private static <T> void setValue(Field field, Object value, T t, Cell cell)
@@ -564,14 +615,14 @@ public class ExcelUtil {
     /**
      * 解析数组单元
      *
-     * @param <T>   泛型类 
-     * @param logs 日志信息类 
-     * @param row 一行数据信息 
-     * @param t 实体类 
-     * @param field 类字段信息 
-     * @param arrayIndex 数组信息 
-     * @param cellIndex cell开始的编号 
-     * @param arrayCount 数组数量 
+     * @param <T>    泛型类  
+     * @param logs 日志信息类  
+     * @param row 一行数据信息  
+     * @param t 实体类  
+     * @param field 类字段信息  
+     * @param arrayIndex 数组信息  
+     * @param cellIndex cell开始的编号  
+     * @param arrayCount 数组数量  
      * @throws IllegalAccessException the illegal access exception
      */
     private static <T> void parseArrayCell(ExcelLogs logs, Row row, T t, Field field, int arrayIndex, int cellIndex,
@@ -599,11 +650,11 @@ public class ExcelUtil {
     /**
      * <li>Description: cell值校验方法 </li>
      *
-     * @param cell cell值 
-     * @param field 组装类字段信息 
-     * @param cellNum 列号 
-     * @param rowNum 行号 
-     * @param logs 日志信息 
+     * @param cell cell值  
+     * @param field 组装类字段信息  
+     * @param cellNum 列号  
+     * @param rowNum 行号  
+     * @param logs 日志信息  
      * @return 是否验证通过
      */
     private static boolean validateCell(Cell cell, Field field, int cellNum, int rowNum, ExcelLogs logs) {
@@ -614,7 +665,7 @@ public class ExcelUtil {
     /**
      * 根据annotation的seq排序后的栏位
      *
-     * @param clazz 类字段列参数信息 
+     * @param clazz 类字段列参数信息  
      * @return
      */
     private static List<FieldForSortting> sortFieldByAnno(Class<?> clazz) {
@@ -628,7 +679,17 @@ public class ExcelUtil {
                 continue;
             }
             int id = ec.index();
-            fields.add(new FieldForSortting(field, id));
+            
+            IExcelCellStyle excelCellStyle = null;
+            try {
+                Class cellStyle = ec.defaultCellStyle();
+                excelCellStyle = (IExcelCellStyle) cellStyle.newInstance();
+            } catch (InstantiationException | IllegalAccessException e) {
+                LG.debug("单元格实例化错误,使用默认的单元格样式");
+                excelCellStyle = new DefaultCellStyle();
+            }
+            
+            fields.add(new FieldForSortting(field, id, excelCellStyle));
         }
         fields.addAll(annoNullFields);
         sortByProperties(fields, true, false, "index");
@@ -638,9 +699,9 @@ public class ExcelUtil {
     /**
      * <li>Description: 根据属性值进行排序 </li>
      *
-     * @param list 待排序集合信息 
-     * @param isNullHigh 确定空值 是否大于任何值  true 空值大于任何值  false 空值小于任何值 
-     * @param isReversed 是否逆序 
+     * @param list 待排序集合信息  
+     * @param isNullHigh 确定空值 是否大于任何值  true 空值大于任何值  false 空值小于任何值  
+     * @param isReversed 是否逆序  
      * @param props 比较的字段名称
      */
     @SuppressWarnings("unchecked")

@@ -32,6 +32,12 @@ public @interface ExcelCell {
     public String defaultValue() default StringUtils.EMPTY;
     
     /**
+     * 默认的cellStyle类信息
+     * @return
+     */
+    public Class defaultCellStyle() default DefaultCellStyle.class;
+    
+    /**
      * 用于验证
      *
      * @return
